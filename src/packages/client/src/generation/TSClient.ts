@@ -61,12 +61,11 @@ const {
   PrismaClientInitializationError,
   PrismaClientValidationError,
   getPrismaClient,
-  debugLib
+  debugLib,
+  sqltag,
 } = require('${runtimePath}')
 
 const path = require('path')
-const fs = require('fs')
-const sqltag = require('sql-template-tag')
 const debug = debugLib('prisma-client')
 
 debug("Client Version ${engineVersion}")
