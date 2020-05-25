@@ -43,14 +43,14 @@ export function TS(gen: Generatable): string {
 
 interface CommonCodeParams {
   runtimePath: string
-  engineVersion: string
   clientVersion: string
+  engineVersion: string
 }
 
 const commonCodeJS = ({
   runtimePath,
-  engineVersion,
   clientVersion,
+  engineVersion,
 }: CommonCodeParams): string => `
 Object.defineProperty(exports, "__esModule", { value: true });
 
@@ -68,16 +68,16 @@ const {
 const path = require('path')
 const debug = debugLib('prisma-client')
 
-debug("Client Version ${engineVersion}")
+debug("Client Version ${clientVersion}")
 debug("Engine Version ${engineVersion}")
 
 /**
- * Query Engine version: ${engineVersion}
  * Prisma Client JS version: ${clientVersion}
+ * Query Engine version: ${engineVersion}
  */
 exports.prismaVersion = {
-  engine: "${engineVersion}",
-  client: "${clientVersion}"
+  client: "${clientVersion}",
+  engine: "${engineVersion}"
 }
 
 exports.PrismaClientKnownRequestError = PrismaClientKnownRequestError;
@@ -98,8 +98,8 @@ exports.raw = sqltag.raw
 
 const commonCodeTS = ({
   runtimePath,
-  engineVersion,
   clientVersion,
+  engineVersion,
 }: CommonCodeParams): string => `import {
   DMMF,
   DMMFClass,
@@ -123,8 +123,8 @@ export { PrismaClientValidationError }
 export { default as sql, empty, join, raw } from 'sql-template-tag';
 
 /**
- * Query Engine version: ${engineVersion}
  * Prisma Client JS version: ${clientVersion}
+ * Query Engine version: ${engineVersion}
  */
 export declare type PrismaVersion = {
   client: string
@@ -234,6 +234,7 @@ export class TSClient implements Generatable {
       sqliteDatasourceOverrides,
       relativePath: path.relative(outputDir, schemaDir),
       internalDatasources: datasources,
+      clientVersion: this.options.clientVersion,
     }
 
     return `${commonCodeJS(this.options)}
@@ -394,13 +395,31 @@ ${new Datasources(this.internalDatasources).toTS()}
 export type ErrorFormat = 'pretty' | 'colorless' | 'minimal'
 
 export interface PrismaClientOptions {
+  /**
+   * Overwrites the datasource url from your prisma.schema file
+   */
   datasources?: Datasources
 
   /**
-   * @default "pretty"
+   * @default "colorless"
    */
   errorFormat?: ErrorFormat
 
+  /**
+   * @example
+   * \`\`\`
+   * // Defaults to stdout
+   * log: ['query', 'info', 'warn']
+   * 
+   * // Emit as events
+   * log: [
+   *  { emit: 'stdout', level: 'query' },
+   *  { emit: 'stdout', level: 'info' },
+   *  { emit: 'stdout', level: 'warn' }
+   * ]
+   * \`\`\`
+   * Read more in our [docs](https://www.prisma.io/docs/reference/tools-and-interfaces/prisma-client/logging#the-log-option).
+   */
   log?: Array<LogLevel | LogDefinition>
 
   /**
@@ -415,11 +434,6 @@ export interface PrismaClientOptions {
     }
     measurePerformance?: boolean
   }
-
-  /**
-   * Useful for pgbouncer
-   */
-  forceTransactions?: boolean
 }
 
 export type Hooks = {
@@ -1027,7 +1041,10 @@ export class InputField implements Generatable {
     if (fieldInputType.isList) {
       fieldType = `Enumerable<${fieldType}>`
     }
-    const nullableStr = !fieldInputType.isRequired && !hasNull ? ' | null' : ''
+    const nullableStr =
+      !fieldInputType.isRequired && !hasNull && fieldInputType.isNullable
+        ? ' | null'
+        : ''
     const jsdoc = field.comment ? wrapComment(field.comment) + '\n' : ''
     return `${jsdoc}${field.name}${optionalStr}: ${fieldType}${nullableStr}`
   }
@@ -1162,6 +1179,7 @@ export class ArgsType implements Generatable {
             kind: 'object',
             isList: false,
             isRequired: false,
+            isNullable: true,
           },
         ],
         comment: `Select specific fields to fetch from the ${name}`,
@@ -1179,6 +1197,7 @@ export class ArgsType implements Generatable {
             kind: 'object',
             isList: false,
             isRequired: false,
+            isNullable: true,
           },
         ],
         comment: `Choose, which related nodes to fetch as well.`,

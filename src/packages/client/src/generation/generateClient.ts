@@ -5,7 +5,7 @@ import {
   DMMF,
   GeneratorConfig,
 } from '@prisma/generator-helper'
-import Debug from 'debug'
+import Debug from '@prisma/debug'
 import fs from 'fs'
 import makeDir from 'make-dir'
 import path from 'path'
@@ -125,12 +125,17 @@ export async function generateClient({
   clientVersion,
   engineVersion,
 }: GenerateClientOptions): Promise<BuildClientResult | undefined> {
-  const useDotPrisma = !generator?.isCustomOutput || testMode
+  const useDotPrisma = testMode ? !runtimePath : !generator?.isCustomOutput
 
   runtimePath =
     runtimePath || (useDotPrisma ? '@prisma/client/runtime' : './runtime')
 
   const finalOutputDir = useDotPrisma ? getDotPrismaDir(outputDir) : outputDir
+
+  if (testMode) {
+    Debug.enable('generateClient')
+    // debug({ finalOutputDir })
+  }
 
   const { prismaClientDmmf, fileMap } = await buildClient({
     datamodel,

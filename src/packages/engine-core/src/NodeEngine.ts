@@ -5,6 +5,7 @@ import {
   PrismaClientInitializationError,
   PrismaClientRustPanicError,
   getMessage,
+  QueryEngineErrorWithLink,
 } from './Engine'
 import debugLib from 'debug'
 import { getPlatform, Platform } from '@prisma/get-platform'
@@ -14,13 +15,15 @@ import fs from 'fs'
 import chalk from 'chalk'
 import { GeneratorConfig } from '@prisma/generator-helper'
 import { printGeneratorConfig } from './printGeneratorConfig'
-import { fixPlatforms, plusX } from './util'
+import { fixPlatforms, plusX, link, getGithubIssueUrl } from './util'
 import { promisify } from 'util'
 import EventEmitter from 'events'
 import { convertLog, RustLog, RustError } from './log'
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import byline from './byline'
-import bent from 'bent'
+import { H2Client } from './client'
+import { h1Post } from './h1client'
+import { Undici } from './undici'
 
 const debug = debugLib('engine')
 const exists = promisify(fs.exists)
@@ -44,6 +47,7 @@ export interface EngineConfig {
   logLevel?: 'info' | 'warn'
   env?: Record<string, string>
   flags?: string[]
+  clientVersion?: string
 }
 
 /**
@@ -79,10 +83,13 @@ export class NodeEngine {
   private logLevel?: 'info' | 'warn'
   private env?: Record<string, string>
   private flags: string[]
-  private exitCode?: number
-  port?: number
-  debug: boolean
-  child?: ChildProcessWithoutNullStreams
+  private port?: number
+  private debug: boolean
+  private child?: ChildProcessWithoutNullStreams
+  private clientVersion?: string
+  private h2client?: H2Client
+  private undici?: Undici
+  exitCode: number
   /**
    * exiting is used to tell the .on('exit') hook, if the exit came from our script.
    * As soon as the Prisma binary returns a correct return code (like 1 or 0), we don't need this anymore
@@ -119,6 +126,7 @@ export class NodeEngine {
     logQueries,
     env,
     flags,
+    clientVersion,
     ...args
   }: EngineConfig) {
     this.env = env
@@ -132,6 +140,7 @@ export class NodeEngine {
     this.showColors = showColors || false
     this.logLevel = logLevel
     this.logQueries = logQueries || false
+    this.clientVersion = clientVersion
     this.flags = flags || []
 
     this.logEmitter.on('error', (log: RustLog) => {
@@ -343,7 +352,7 @@ Read more about deploying Prisma Client: https://pris.ly/d/client-generator`
     }
 
     if (this.incorrectlyPinnedPlatform) {
-      console.log(`${chalk.yellow(
+      console.error(`${chalk.yellow(
         'Warning:',
       )} You pinned the platform ${chalk.bold(
         this.incorrectlyPinnedPlatform,
@@ -546,25 +555,30 @@ You very likely have the wrong "binaryTarget" defined in the schema.prisma file.
 
         this.child.on('close', (code, signal): void => {
           if (code === null && signal === 'SIGABRT' && this.child) {
-            console.error(`${chalk.bold.red(`Error in Prisma Client:`)}${
-              this.stderrLogs
-            }
-
-This is a non-recoverable error which probably happens when the Prisma Query Engine has a stack overflow.
-Please create an issue in https://github.com/prisma/prisma-client-js describing the last Prisma Client query you called.`)
+            const error = new QueryEngineErrorWithLink(
+              {
+                platform: this.platform,
+                title: `Panic in Query Engine with SIGABRT signal`,
+                description: this.stderrLogs,
+                version: this.clientVersion,
+              },
+              // this.platform,
+              // `Panic in Query Engine with SIGABRT signal`,
+              // this.stderrLogs,
+            )
+            this.logEmitter.emit('error', error)
           } else if (
             code === 255 &&
             signal === null &&
             this.lastErrorLog?.fields.message === 'PANIC'
           ) {
-            console.error(`${chalk.bold.red(`Error in Prisma Client:`)}
-${this.lastErrorLog.fields.message}: ${this.lastErrorLog.fields.reason} in
-${this.lastErrorLog.fields.file}:${this.lastErrorLog.fields.line}:${
-              this.lastErrorLog.fields.column
-            }
-
-This is a non-recoverable error which probably happens when the Prisma Query Engine has a panic.
-Please create an issue in https://github.com/prisma/prisma-client-js describing the last Prisma Client query you called.`)
+            const error = new QueryEngineErrorWithLink({
+              platform: this.platform,
+              title: `${this.lastErrorLog.fields.message}: ${this.lastErrorLog.fields.reason} in
+${this.lastErrorLog.fields.file}:${this.lastErrorLog.fields.line}:${this.lastErrorLog.fields.column}`,
+              version: this.clientVersion,
+            })
+            this.logEmitter.emit('error', error)
           }
         })
 
@@ -592,7 +606,8 @@ Please create an issue in https://github.com/prisma/prisma-client-js describing 
         const url = `http://localhost:${this.port}`
         this.url = url
         // TODO: Re-enable
-        // this.client = new Client(url)
+        this.h2client = new H2Client(url)
+        this.undici = new Undici(url)
         resolve()
       } catch (e) {
         reject(e)
@@ -670,25 +685,55 @@ Please create an issue in https://github.com/prisma/prisma-client-js describing 
       )
     }
 
-    const variables = {}
-    const body = {
-      query,
-      variables,
+    // this.currentRequestPromise = this.undici!.request(body)
+    if (process.env.PRISMA_CLIENT_USE) {
+      switch (process.env.PRISMA_CLIENT_USE) {
+        case 'h2':
+          this.currentRequestPromise = this.h2client!.request(
+            stringifyQuery(query),
+          )
+          break
+        case 'h1':
+          this.currentRequestPromise = h1Post(this.port, stringifyQuery(query))
+          break
+        case 'undici':
+          this.currentRequestPromise = this.undici!.request(
+            stringifyQuery(query),
+          )
+          break
+      }
+    } else {
+      this.currentRequestPromise = h1Post(this.port, stringifyQuery(query))
     }
-
-    const post = bent(this.url, 'POST', 'json', 200)
-    this.currentRequestPromise = post('/', body)
+    // this.currentRequestPromise = h1Post(this.port, body)
+    // this.currentRequestPromise = curly
+    //   .post(this.url, {
+    //     postFields: JSON.stringify(body),
+    //     httpHeader: ['Content-Type: application/json'],
+    //   })
+    //   .then((res) => {
+    //     return { data: JSON.parse(res.data), headers: res.headers[0] }
+    //   })
+    // this.currentRequestPromise = turbo
+    //   .post({
+    //     hostname: 'localhost',
+    //     port: this.port,
+    //     path: '/',
+    //     body,
+    //   })
+    //   .then((data) => ({ data, headers: {} }))
 
     return this.currentRequestPromise
-      .then((data) => {
+      .then(({ data, headers }) => {
         if (data.errors) {
           if (data.errors.length === 1) {
             throw this.graphQLToJSError(data.errors[0])
           }
           throw new Error(JSON.stringify(data.errors))
         }
+        const elapsed = parseInt(headers['x-elapsed']) / 1000
 
-        return data
+        return { data, elapsed }
       })
       .catch((error) => {
         debug({ error })
@@ -743,11 +788,10 @@ Please create an issue in https://github.com/prisma/prisma-client-js describing 
       batch: queries.map((query) => ({ query, variables })),
     }
 
-    const post = bent(this.url, 'POST', 'json', 200)
-    this.currentRequestPromise = post('/', body)
+    this.currentRequestPromise = this.h2client.request(JSON.stringify(body))
 
     return this.currentRequestPromise
-      .then((data) => {
+      .then(({ data, headers }) => {
         if (Array.isArray(data)) {
           return data.map((result) => {
             if (result.errors) {
@@ -814,6 +858,10 @@ Please create an issue in https://github.com/prisma/prisma-client-js describing 
 
     return new PrismaClientUnknownRequestError(error.user_facing_error.message)
   }
+}
+
+function stringifyQuery(q: string) {
+  return `{"variables":{},"query":${JSON.stringify(q)}}`
 }
 
 function exitHandler(exit = false) {
