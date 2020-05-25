@@ -62,7 +62,7 @@ const {
   PrismaClientValidationError,
   getPrismaClient,
   debugLib,
-  sqltag,
+  sqlTemplateTag,
 } = require('${runtimePath}')
 
 const path = require('path')
@@ -90,10 +90,10 @@ exports.PrismaClientValidationError = PrismaClientValidationError;
  * Re-export of sql-template-tag
  */
 
-exports.sql = sqltag.sqltag
-exports.empty = sqltag.empty
-exports.join = sqltag.join
-exports.raw = sqltag.raw
+exports.sql = sqlTemplateTag
+exports.empty = sqlTemplateTag.empty
+exports.join = sqlTemplateTag.join
+exports.raw = sqlTemplateTag.raw
 `
 
 const commonCodeTS = ({
@@ -109,6 +109,7 @@ const commonCodeTS = ({
   PrismaClientRustPanicError,
   PrismaClientInitializationError,
   PrismaClientValidationError,
+  sqlTemplateTag,
 } from '${runtimePath}';
 
 export { PrismaClientKnownRequestError }
@@ -120,7 +121,7 @@ export { PrismaClientValidationError }
 /**
  * Re-export of sql-template-tag
  */
-export { default as sql, empty, join, raw } from 'sql-template-tag';
+export { default as sql, empty, join, raw } from sqlTemplateTag;
 
 /**
  * Prisma Client JS version: ${clientVersion}
