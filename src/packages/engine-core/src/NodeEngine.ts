@@ -59,6 +59,7 @@ const knownPlatforms: Platform[] = [
   'debian-openssl-1.1.x',
   'rhel-openssl-1.0.x',
   'rhel-openssl-1.1.x',
+  'arm-openssl-1.1.x',
   'linux-musl',
   'windows',
   'freebsd',
@@ -293,8 +294,8 @@ You may have to run ${chalk.greenBright(
     if (!(await exists(prismaPath))) {
       const pinnedStr = this.incorrectlyPinnedPlatform
         ? `\nYou incorrectly pinned it to ${chalk.redBright.bold(
-            `${this.incorrectlyPinnedPlatform}`,
-          )}\n`
+          `${this.incorrectlyPinnedPlatform}`,
+        )}\n`
         : ''
 
       const dir = path.dirname(prismaPath)
@@ -324,9 +325,9 @@ ${files.map((f) => `  ${f}`).join('\n')}\n`
           errorText += `
 You already added the platform${
             this.generator.binaryTargets.length > 1 ? 's' : ''
-          } ${this.generator.binaryTargets
-            .map((t) => `"${chalk.bold(t)}"`)
-            .join(', ')} to the "${chalk.underline('generator')}" block
+            } ${this.generator.binaryTargets
+              .map((t) => `"${chalk.bold(t)}"`)
+              .join(', ')} to the "${chalk.underline('generator')}" block
 in the "schema.prisma" file as described in https://pris.ly/d/client-generator,
 but something went wrong. That's suboptimal.
 
@@ -336,14 +337,14 @@ Please create an issue at https://github.com/prisma/prisma-client-js/issues/new`
           // Just add it
           errorText += `\n\nTo solve this problem, add the platform "${
             this.platform
-          }" to the "${chalk.underline(
-            'generator',
-          )}" block in the "schema.prisma" file:
+            }" to the "${chalk.underline(
+              'generator',
+            )}" block in the "schema.prisma" file:
 ${chalk.greenBright(this.getFixedGenerator())}
 
 Then run "${chalk.greenBright(
-            'prisma generate',
-          )}" for your changes to take effect.
+              'prisma generate',
+            )}" for your changes to take effect.
 Read more about deploying Prisma Client: https://pris.ly/d/client-generator`
         }
       } else {

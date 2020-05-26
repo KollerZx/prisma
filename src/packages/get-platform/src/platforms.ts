@@ -5,6 +5,7 @@ export type Platform =
   | 'debian-openssl-1.1.x'
   | 'rhel-openssl-1.0.x'
   | 'rhel-openssl-1.1.x'
+  | 'arm-openssl-1.1.x'
   | 'linux-musl'
   | 'windows'
   | 'freebsd'
@@ -19,6 +20,7 @@ export const platforms = [
   'debian-openssl-1.1.x',
   'rhel-openssl-1.0.x',
   'rhel-openssl-1.1.x',
+  'arm-openssl-1.1.x',
   'linux-musl',
   'windows',
   'freebsd',
